@@ -3,7 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <title>Barcode Generator</title>
+  <!-- Barcode library -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <!-- ExcelJS for .xlsx export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+  <!-- docx UMD build for .docx export -->
+  <script src="https://unpkg.com/docx@8.2.2/build/index.umd.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -131,6 +136,8 @@
 
     <div class="section">
       <button id="generateBtn" class="btn">Generate</button>
+      <button id="downloadExcelBtn" class="btn" disabled>Download in Excel</button>
+      <button id="downloadDocsBtn" class="btn" disabled>Download in Docs</button>
     </div>
   </div>
 
@@ -152,6 +159,8 @@
     const inputSection = document.getElementById('inputSection');
     const inputField = document.getElementById('inputField');
     const generateBtn = document.getElementById('generateBtn');
+    const downloadExcelBtn = document.getElementById('downloadExcelBtn');
+    const downloadDocsBtn = document.getElementById('downloadDocsBtn');
     const barcodeModal = document.getElementById('barcodeModal');
     const barcode = document.getElementById('barcode');
     const closeModal = document.getElementById('closeModal');
@@ -216,6 +225,8 @@
         currentIndex = 0;
         showBarcode(barcodeData[currentIndex]);
         barcodeModal.style.display = 'flex';
+        downloadExcelBtn.disabled = false;
+        downloadDocsBtn.disabled = false;
       } else {
         alert("No valid input to generate barcodes.");
       }
@@ -232,29 +243,56 @@
       });
     }
 
-    closeModal.onclick = () => {
-      barcodeModal.style.display = 'none';
-    };
+    function getBase64Images() {
+      return barcodeData.map(code => {
+        const canvas = document.createElement('canvas');
+        JsBarcode(canvas, code, { format: 'CODE128', displayValue: true, fontSize: 18, width: 2, height: 60, margin: 10 });
+        return canvas.toDataURL('image/png');
+      });
+    }
 
-    prevBtn.onclick = () => {
-      if (currentIndex > 0) {
-        currentIndex--;
-        showBarcode(barcodeData[currentIndex]);
-      }
-    };
+    async function downloadExcel() {
+      const base64Images = getBase64Images();
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Barcodes');
+      sheet.getColumn(1).width = 30;
 
-    nextBtn.onclick = () => {
-      if (currentIndex < barcodeData.length - 1) {
-        currentIndex++;
-        showBarcode(barcodeData[currentIndex]);
-      }
-    };
+      base64Images.forEach((b64, i) => {
+        const imgId = workbook.addImage({ base64: b64, extension: 'png' });
+        // Place each image in rows 1, 10, 20, 30, … (zero-based indices 0, 9, 19, 29)
+        sheet.addImage(imgId, { tl: { col: 0, row: i * 9 }, ext: { width: 350, height: 100 }, editAs: 'oneCell' });
+      });
 
-    window.onclick = (event) => {
-      if (event.target === barcodeModal) {
-        barcodeModal.style.display = 'none';
-      }
-    };
+      const buf = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'barcodes.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function downloadDocs() {
+      const { Document, Packer, Paragraph, ImageRun } = docx;
+      const base64Images = getBase64Images();
+      const doc = new Document({ sections: [{ children: base64Images.map(b64 => new Paragraph({ children: [new ImageRun({ data: b64.replace(/^data:image\/png;base64,/, ''), transformation: { width: 400, height: 150 } })] })) }] });
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'barcodes.docx';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    downloadExcelBtn.onclick = downloadExcel;
+    downloadDocsBtn.onclick = downloadDocs;
+
+    closeModal.onclick = () => { barcodeModal.style.display = 'none'; };
+    prevBtn.onclick = () => { if (currentIndex > 0) { currentIndex--; showBarcode(barcodeData[currentIndex]); } };
+    nextBtn.onclick = () => { if (currentIndex < barcodeData.length - 1) { currentIndex++; showBarcode(barcodeData[currentIndex]); } };
+    window.onclick = event => { if (event.target === barcodeModal) barcodeModal.style.display = 'none'; };
   </script>
 </body>
 </html>
